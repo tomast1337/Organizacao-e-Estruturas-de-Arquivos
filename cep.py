@@ -19,5 +19,5 @@ with open("cep.dat", "rb") as f:
             for i in range(len(record)):
                 print(record[i].decode('latin1'))
         line = f.read(registroCEP.size)
-
+    f.close()
     print(f"total de registros coincidindo: {counter}")
