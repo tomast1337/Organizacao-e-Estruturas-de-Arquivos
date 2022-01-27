@@ -2,6 +2,7 @@ use std::env;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::mem;
 use std::path::Path;
 
 // Converter os bytes para string latin1
@@ -16,7 +17,7 @@ struct Cep {
     uf: [u8; 72],
     sigla: [u8; 2],
     cep: [u8; 8],
-    lixo: [u8; 2],
+    _lixo: [u8; 2],
 }
 
 impl Cep {
@@ -86,40 +87,29 @@ fn main() {
 
     while inicio < fim {
         let meio: u64 = (inicio + fim) / 2; // meio da sessão de busca
-
-        let mut cep_atual = Cep {
-            logradouro: [0; 72],
-            bairro: [0; 72],
-            cidade: [0; 72],
-            uf: [0; 72],
-            sigla: [0; 2],
-            cep: [0; 8],
-            lixo: [0; 2],
-        };
-
         buf_reader
             .seek(SeekFrom::Start(meio * tamanho_linha))
             .unwrap();
 
-        buf_reader.read_exact(&mut cep_atual.logradouro).unwrap();
-        buf_reader.read_exact(&mut cep_atual.bairro).unwrap();
-        buf_reader.read_exact(&mut cep_atual.cidade).unwrap();
-        buf_reader.read_exact(&mut cep_atual.uf).unwrap();
-        buf_reader.read_exact(&mut cep_atual.sigla).unwrap();
-        buf_reader.read_exact(&mut cep_atual.cep).unwrap();
-        buf_reader.read_exact(&mut cep_atual.lixo).unwrap();
-
-        let valor = cep_atual.get_cep_value();
-
-        if valor == cep {
-            println!("Cep encontrado!");
-            println!("{}", cep_atual);
-            return;
-        } else if valor > cep {
-            fim = meio;
-        } else {
-            inicio = meio + 1;
-        }
+        let mut bytes = [0; 300];
+        match buf_reader.read(&mut bytes) {
+            Ok(300) => {
+                let cep_atual: Cep = unsafe { mem::transmute(bytes) }; // Converter os bytes para Cep
+                let valor = cep_atual.get_cep_value();
+                if valor == cep {
+                    println!("Cep encontrado!");
+                    println!("{}", cep_atual);
+                    return;
+                } else if valor > cep {
+                    fim = meio;
+                } else {
+                    inicio = meio + 1;
+                }
+            }
+            Ok(0) => break,
+            Err(e) => panic!("Erro ao ler o arquivo: {}", e),
+            _ => panic!("Erro desconhecido"),
+        };
     }
     println!("Cep não encontrado!");
 }
