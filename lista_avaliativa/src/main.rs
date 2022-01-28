@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom,Write};
 use std::mem;
 use std::path::Path;
+use std::collections::HashMap;
 
 struct RegNascimento {
     cod_municipio_nasci: [u8; 6], /* Código do Município de Nascimento */
@@ -195,43 +196,6 @@ fn main() {
     imprima o contador. Se o registro lido tiver o mesmo código do estabelecimento do anterior,
     apenas acrescente 1 unidade ao contador, sem imprimir. 
     */
-    // Mapa com o código do estabelecimento e o número de nascimentos
-    let mut mapa_estabelecimento_nascimentos: HashMap<String, u64> = HashMap::new();
-    //Abrir o arquivo ordenado
-    let mut buffer_ordenado = match File::open("sinasc-sp-2018-ordenado.dat") {
-        Ok(file) => file,
-        Err(e) => panic!("Erro ao abrir o arquivo: {}", e),
-    };
-    //Preencher o mapa com os registros e contagem dos nascimentos
-    let mut registro_ordenado = [0; 42];
-    let mut cod_estabelecimento_anterior = String::new();
-    let mut contador_nascimentos = 0;
-    let mut registro_anterior: RegNascimento = unsafe { mem::transmute(registro_ordenado) };
-    for i in 0..num_registros {
-        match buffer_ordenado.read(&mut registro) {
-            Ok(42) => {
-                let ultimo_reg:RegNascimento = unsafe { mem::transmute(registro) };
-                let cod_estabelecimento: String = u8_to_string(&ultimo_reg.cod_estabelecimento);
-                if i == 0 {
-                    mapa_estabelecimento_nascimentos.insert(cod_estabelecimento, 1);
-                } else {
-                    let cod_estabelecimento_anterior: String = u8_to_string(&registro_anterior.cod_estabelecimento);
-                    if cod_estabelecimento == cod_estabelecimento_anterior {
-                        let nascimentos: u64 = mapa_estabelecimento_nascimentos.get(&cod_estabelecimento).unwrap().clone();
-                        mapa_estabelecimento_nascimentos.insert(cod_estabelecimento, nascimentos + 1);
-                    } else {
-                        mapa_estabelecimento_nascimentos.insert(cod_estabelecimento, 1);
-                    }
-                }
-                registro_anterior = ultimo_reg;
-            },
-            Ok(0) => break,
-            Ok(_) => {},
-            Err(e) => panic!("Erro ao ler o registro: {}", e),
-        }
-    }
-
-
 
     /*
     9) Faça uma estimativa de quantos passos seriam gastos para encontrar um estabelecimento no seu arquivo gerado na questão 7.
