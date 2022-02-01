@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::fs::File;
+use std::fs::{remove_file, File};
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::path::Path;
@@ -21,20 +21,11 @@ fn u8_to_string(s: &[u8]) -> String {
     s.iter().map(|&c| c as char).collect()
 }
 
-impl fmt::Display for RegNascimento {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "cod_municipio_nasci: {}\ncod_estabelecimento: {}\ncod__municipio_resi: {}\ndata_nasc: {}\nsemanas_gestacao: {}\nsexo: {}\npeso: {}\ndata_nasci_mae: {}",
-            u8_to_string(&self.cod_municipio_nasci),
-            u8_to_string(&self.cod_estabelecimento),
-            u8_to_string(&self.cod_municipio_resi),
-            u8_to_string(&self.data_nasc),
-            u8_to_string(&self.semanas_gestacao),
-            u8_to_string(&self.sexo),
-            u8_to_string(&self.peso),
-            u8_to_string(&self.data_nasci_mae)
-        )
+//1) Qual é o tamanho do arquivo em bytes?
+fn questao_1(arquivo_original: &File) -> u64 {
+    match arquivo_original.metadata() {
+        Ok(metadata) => metadata.len(),
+        Err(e) => panic!("Erro ao ler o tamanho do arquivo: {}", e),
     }
 }
 
@@ -72,7 +63,7 @@ fn questao_4(arquivo_original: &mut File, num_registros: u64) {
     }
 
     println!(
-        "Quantidade de registros na capital: {}",
+        "Quantidade de registros na capital copiados para \"sinasc-sp-capital-2018.dat\": {}",
         contagem_nasci_capital
     )
 }
@@ -150,10 +141,17 @@ fn questao_6(arquivo_original: &mut File) {
 */
 fn questao_7(arquivo_original: &mut File) {
     // Mapa guarda o código do estabelecimento,u64 , e o index, u64, no arquivo original
-    let mut mapa_estabelecimento: HashMap<u64, u64> = HashMap::new();
+    let mut estabelecimentos: Vec<(u64, u64)> = Vec::new();
+    
+    let quant_registros = match arquivo_original.metadata() {
+        Ok(metadata) => metadata.len() / mem::size_of::<RegNascimento>() as u64,
+        Err(e) => panic!("Erro ao ler o tamanho do arquivo: {}", e),
+    };
+    
     let mut buffer = BufReader::new(arquivo_original);
     buffer.seek(SeekFrom::Start(0)).unwrap();
-    loop {
+
+    for i in 0..quant_registros {
         let mut registro = [0; 42];
         match buffer.read(&mut registro) {
             Ok(size) => {
@@ -162,25 +160,36 @@ fn questao_7(arquivo_original: &mut File) {
                 } // EOF
 
                 let ultimo_reg: RegNascimento = unsafe { mem::transmute(registro) };
-                println!("{}", ultimo_reg);
-                let cod_estabelecimento = u8_to_string(&ultimo_reg.cod_estabelecimento)
-                    .parse()
-                    .unwrap();
-                let position = buffer.seek(SeekFrom::Current(0)).unwrap();
-                mapa_estabelecimento.insert(cod_estabelecimento, position);
+
+                // Converte a string em um numero comparável
+                let cod_estabelecimento =
+                    match u8_to_string(&ultimo_reg.cod_estabelecimento).parse() {
+                        Ok(numero) => numero,
+                        Err(_) => 0,
+                    };
+                let position = i;
+                estabelecimentos.push((cod_estabelecimento, position));
             }
             Err(e) => panic!("Erro ao ler o registro: {}", e),
         }
     }
+
     println!(
         "Número de registros a serem ordenados: {}",
-        mapa_estabelecimento.len()
+        estabelecimentos.len()
     );
     // Ordena o mapa pelo código do estabelecimento
-    //Transforma o mapa em uma lista de tuplas que é ordenável
-    let mut mapa_ordenado: Vec<(&u64, &u64)> = mapa_estabelecimento.iter().collect();
+    //Transforma o mapa em uma lista de tuplas(ref,ref) que é ordenável
+
     // Ordena a lista de tuplas
-    mapa_ordenado.sort_by(|a, b| a.0.cmp(b.0));
+    estabelecimentos.sort_by(|a, b| a.0.cmp(&b.0));
+
+    fn save2file(file_name: &str, data: &Vec<(u64, u64)>) {
+        let mut file = File::create(file_name).unwrap();
+        file.write_all(format!("{:?}", data).as_bytes()).unwrap();
+    }
+
+    save2file("Dados - ordenados.txt", &estabelecimentos);
 
     // Cria o arquivo para ordenar
     let mut arquivo_ordenado = match File::create(Path::new("sinasc-sp-2018-ordenado.dat")) {
@@ -188,24 +197,23 @@ fn questao_7(arquivo_original: &mut File) {
         Err(e) => panic!("Erro ao criar o arquivo: {}", e),
     };
 
+    buffer.seek(SeekFrom::Start(0)).unwrap();
+
     // Copia o arquivo original para o arquivo ordenado a partir da lista ordenada
-    for (_, index) in mapa_ordenado {
+    for (i, _) in estabelecimentos {
         let mut registro = [0; 42];
-        match buffer.seek(SeekFrom::Start(*index)) {
-            Ok(_) => {}
-            Err(e) => panic!("Erro ao ler o registro: {}", e),
-        }
+        buffer.seek(SeekFrom::Start(i * 42)).unwrap();
         match buffer.read(&mut registro) {
             Ok(size) => {
                 if size == 0 {
-                    break;
+                    continue;
                 } // EOF
                 arquivo_ordenado.write(&registro).unwrap();
             }
             Err(e) => panic!("Erro ao ler o registro: {}", e),
         }
     }
-    println!("Dados organizados com sucesso e armazenados em 'sinasc-sp-2018-ordenado.dat'!");
+    println!("Dados organizados com sucesso e armazenados em \"sinasc-sp-2018-ordenado.dat\"!");
 }
 
 /*
@@ -224,11 +232,16 @@ fn questao_8() {
         Err(e) => panic!("Erro ao abrir o arquivo: {}", e),
     };
 
+    let file_size = questao_1(&arquivo_ordenado);
+    let quant_registros = file_size / mem::size_of::<RegNascimento>() as u64;
+
+    let mut contador = 0;
+    let mut ultimo_estabelecimento = String::new();
+
     let mut buffer = BufReader::new(&mut arquivo_ordenado);
     buffer.seek(SeekFrom::Start(0)).unwrap();
-    // Mapa guarda o código do estabelecimento,u64 , e a quantidade de nascimentos no estabelecimento
-    let mut contador: HashMap<u64, u64> = HashMap::new();
-    loop {
+
+    for _ in 0..quant_registros {
         let mut registro = [0; 42];
         match buffer.read(&mut registro) {
             Ok(size) => {
@@ -237,40 +250,49 @@ fn questao_8() {
                 } // EOF
 
                 let ultimo_reg: RegNascimento = unsafe { mem::transmute(registro) };
-                let cod_estabelecimento = u8_to_string(&ultimo_reg.cod_estabelecimento)
-                    .parse()
-                    .unwrap();
-                if contador.contains_key(&cod_estabelecimento) {
-                    let valor = contador.get_mut(&cod_estabelecimento).unwrap();
-                    *valor += 1;
+
+                let cod_estabelecimento = u8_to_string(&ultimo_reg.cod_estabelecimento);
+
+                if ultimo_estabelecimento != cod_estabelecimento {
+                    println!("{} - {}", ultimo_estabelecimento, contador);
+                    contador = 1;
+                    ultimo_estabelecimento = cod_estabelecimento;
                 } else {
-                    contador.insert(cod_estabelecimento, 1);
+                    contador += 1;
                 }
             }
             Err(e) => panic!("Erro ao ler o registro: {}", e),
         }
     }
 }
+// Exclui os arquivos sinasc-sp-capital-2018.dat, sinasc-sp-2018-ordenado.dat se existirem
+fn limpar_arquivo() -> std::io::Result<()> {
+    remove_file(Path::new("sinasc-sp-capital-2018.dat"))?;
+    remove_file(Path::new("sinasc-sp-2018-ordenado.dat"))?;
+    Ok(())
+}
 
 fn main() {
+    match limpar_arquivo() {
+        Ok(_) => println!("Arquivos limpos com sucesso!"),
+        Err(e) => println!("Arquivos não existentes ou erro {}", e),
+    }
+
     let mut arquivo_original = match File::open(Path::new("sinasc-sp-2018.dat")) {
         Ok(file) => file,
         Err(e) => panic!("Erro ao abrir o arquivo: {}", e),
     };
 
-    let tam_arquivo = match arquivo_original.metadata() {
-        Ok(metadata) => metadata.len(),
-        Err(e) => panic!("Erro ao ler o tamanho do arquivo: {}", e),
-    };
     //1) Qual é o tamanho do arquivo em bytes?
+    let tam_arquivo = questao_1(&arquivo_original);
     println!("Tamanho do arquivo: {} bytes", tam_arquivo);
 
-    let tamanho_registro = mem::size_of::<RegNascimento>();
     //2) Qual é o tamanho de cada registro?
+    let tamanho_registro = mem::size_of::<RegNascimento>();
     println!("Tamanho do registro: {} bytes", tamanho_registro);
 
-    let num_registros = tam_arquivo / tamanho_registro as u64;
     //3) Quantos registros tem o arquivo?
+    let num_registros = tam_arquivo / tamanho_registro as u64;
     println!("Número de registros: {}", num_registros);
 
     questao_4(&mut arquivo_original, num_registros);
@@ -281,8 +303,7 @@ fn main() {
 
     questao_7(&mut arquivo_original);
 
-    //questao_8();
-
+    questao_8();
     /*
     9) Faça uma estimativa de quantos passos seriam gastos para encontrar um estabelecimento no seu arquivo gerado na questão 7.
     Justifique sua resposta. Não é necessário implementação nesse item.
