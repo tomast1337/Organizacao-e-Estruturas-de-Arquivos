@@ -5,16 +5,34 @@ use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::path::Path;
 
+#[derive(Copy, Clone)]
 struct RegNascimento {
     cod_municipio_nasci: [u8; 6], /* Código do Município de Nascimento */
     cod_estabelecimento: [u8; 7], /* Código do Estabelecimento */
-    cod_municipio_resi: [u8; 6],  /* Código do Município de Residência */
-    data_nasc: [u8; 8],           /* Data de Nascimento no formato DDMMAAAA */
-    semanas_gestacao: [u8; 2],    /* Número de Semanas de Gestação */
+    _cod_municipio_resi: [u8; 6], /* Código do Município de Residência */
+    _data_nasc: [u8; 8],          /* Data de Nascimento no formato DDMMAAAA */
+    _semanas_gestacao: [u8; 2],   /* Número de Semanas de Gestação */
     sexo: [u8; 1],                /* Sexo 0 não informado, 1 Masculino ou 2 Feminino */
     peso: [u8; 4],                /* Peso em gramas */
-    data_nasci_mae: [u8; 8],      /* Data de Nascimento no formato DDMMAAAA */
+    _data_nasci_mae: [u8; 8],     /* Data de Nascimento no formato DDMMAAAA */
 } // 6 + 7 + 6 + 8 + 2 + 1 + 4 + 8 = 42 bytes
+
+impl fmt::Display for RegNascimento {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "cod_municipio_nasci: {}\ncod_estabelecimento: {}\ncod__municipio_resi: {}\ndata_nasc: {}\nsemanas_gestacao: {}\nsexo: {}\npeso: {}\ndata_nasci_mae: {}",
+            u8_to_string(&self.cod_municipio_nasci),
+            u8_to_string(&self.cod_estabelecimento),
+            u8_to_string(&self._cod_municipio_resi),
+            u8_to_string(&self._data_nasc),
+            u8_to_string(&self._semanas_gestacao),
+            u8_to_string(&self.sexo),
+            u8_to_string(&self.peso),
+            u8_to_string(&self._data_nasci_mae)
+        )
+    }
+}
 
 // Converte uma array de u8 para String
 fn u8_to_string(s: &[u8]) -> String {
@@ -141,7 +159,7 @@ fn questao_6(arquivo_original: &mut File) {
 */
 fn questao_7(arquivo_original: &mut File) {
     // Mapa guarda o código do estabelecimento,u64 , e o index, u64, no arquivo original
-    let mut estabelecimentos: Vec<(u64, u64)> = Vec::new();
+    let mut estabelecimentos: Vec<RegNascimento> = Vec::new();
     
     let quant_registros = match arquivo_original.metadata() {
         Ok(metadata) => metadata.len() / mem::size_of::<RegNascimento>() as u64,
@@ -151,7 +169,7 @@ fn questao_7(arquivo_original: &mut File) {
     let mut buffer = BufReader::new(arquivo_original);
     buffer.seek(SeekFrom::Start(0)).unwrap();
 
-    for i in 0..quant_registros {
+    for _ in 0..quant_registros {
         let mut registro = [0; 42];
         match buffer.read(&mut registro) {
             Ok(size) => {
@@ -160,15 +178,7 @@ fn questao_7(arquivo_original: &mut File) {
                 } // EOF
 
                 let ultimo_reg: RegNascimento = unsafe { mem::transmute(registro) };
-
-                // Converte a string em um numero comparável
-                let cod_estabelecimento =
-                    match u8_to_string(&ultimo_reg.cod_estabelecimento).parse() {
-                        Ok(numero) => numero,
-                        Err(_) => 0,
-                    };
-                let position = i;
-                estabelecimentos.push((cod_estabelecimento, position));
+                estabelecimentos.push(ultimo_reg);
             }
             Err(e) => panic!("Erro ao ler o registro: {}", e),
         }
@@ -178,41 +188,28 @@ fn questao_7(arquivo_original: &mut File) {
         "Número de registros a serem ordenados: {}",
         estabelecimentos.len()
     );
-    // Ordena o mapa pelo código do estabelecimento
-    //Transforma o mapa em uma lista de tuplas(ref,ref) que é ordenável
 
-    // Ordena a lista de tuplas
-    estabelecimentos.sort_by(|a, b| a.0.cmp(&b.0));
+    // Ordena o vetor de registros pelo código do estabelecimento
+    estabelecimentos.sort_by_key(|reg| u8_to_string(&reg.cod_estabelecimento));
 
-    fn save2file(file_name: &str, data: &Vec<(u64, u64)>) {
-        let mut file = File::create(file_name).unwrap();
-        file.write_all(format!("{:?}", data).as_bytes()).unwrap();
-    }
 
-    save2file("Dados - ordenados.txt", &estabelecimentos);
-
-    // Cria o arquivo para ordenar
+    // Cria o arquivo para os dados ordenados
     let mut arquivo_ordenado = match File::create(Path::new("sinasc-sp-2018-ordenado.dat")) {
         Ok(file) => file,
         Err(e) => panic!("Erro ao criar o arquivo: {}", e),
     };
 
-    buffer.seek(SeekFrom::Start(0)).unwrap();
+    for estabelecimento in estabelecimentos {
+        println!("{}", estabelecimento);
+        let registro: [u8; 42] = unsafe { mem::transmute(estabelecimento) };
+        
+        //Pause
+        println!("Pressione qualquer tecla para continuar...");
+        std::io::stdin().read_line(&mut String::new()).unwrap();
 
-    // Copia o arquivo original para o arquivo ordenado a partir da lista ordenada
-    for (i, _) in estabelecimentos {
-        let mut registro = [0; 42];
-        buffer.seek(SeekFrom::Start(i * 42)).unwrap();
-        match buffer.read(&mut registro) {
-            Ok(size) => {
-                if size == 0 {
-                    continue;
-                } // EOF
-                arquivo_ordenado.write(&registro).unwrap();
-            }
-            Err(e) => panic!("Erro ao ler o registro: {}", e),
-        }
+        arquivo_ordenado.write(&registro).unwrap();
     }
+
     println!("Dados organizados com sucesso e armazenados em \"sinasc-sp-2018-ordenado.dat\"!");
 }
 
@@ -232,16 +229,13 @@ fn questao_8() {
         Err(e) => panic!("Erro ao abrir o arquivo: {}", e),
     };
 
-    let file_size = questao_1(&arquivo_ordenado);
-    let quant_registros = file_size / mem::size_of::<RegNascimento>() as u64;
-
     let mut contador = 0;
     let mut ultimo_estabelecimento = String::new();
 
     let mut buffer = BufReader::new(&mut arquivo_ordenado);
     buffer.seek(SeekFrom::Start(0)).unwrap();
 
-    for _ in 0..quant_registros {
+    loop {
         let mut registro = [0; 42];
         match buffer.read(&mut registro) {
             Ok(size) => {
@@ -303,7 +297,7 @@ fn main() {
 
     questao_7(&mut arquivo_original);
 
-    questao_8();
+    //questao_8();
     /*
     9) Faça uma estimativa de quantos passos seriam gastos para encontrar um estabelecimento no seu arquivo gerado na questão 7.
     Justifique sua resposta. Não é necessário implementação nesse item.
