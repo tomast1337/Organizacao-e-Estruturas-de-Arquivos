@@ -1,5 +1,4 @@
-use std::fmt;
-use std::fs::{remove_file, File};
+use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::path::Path;
@@ -15,38 +14,6 @@ struct RegNascimento {
     peso: [u8; 4],                /* Peso em gramas */
     _data_nasci_mae: [u8; 8],     /* Data de Nascimento no formato DDMMAAAA */
 } // 6 + 7 + 6 + 8 + 2 + 1 + 4 + 8 = 42 bytes
-
-impl RegNascimento{
-    pub fn new() -> Self{
-        RegNascimento {
-            cod_municipio_nasci: [0; 6],
-            cod_estabelecimento: [0; 7],
-            _cod_municipio_resi: [0; 6],
-            _data_nasc: [0; 8],
-            _semanas_gestacao: [0; 2],
-            sexo: [0; 1],
-            peso: [0; 4],
-            _data_nasci_mae: [0; 8],
-        }
-    }
-}
-
-impl fmt::Display for RegNascimento {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "cod_municipio_nasci: {}\ncod_estabelecimento: {}\ncod__municipio_resi: {}\ndata_nasc: {}\nsemanas_gestacao: {}\nsexo: {}\npeso: {}\ndata_nasci_mae: {}",
-            u8_to_string(&self.cod_municipio_nasci),
-            u8_to_string(&self.cod_estabelecimento),
-            u8_to_string(&self._cod_municipio_resi),
-            u8_to_string(&self._data_nasc),
-            u8_to_string(&self._semanas_gestacao),
-            u8_to_string(&self.sexo),
-            u8_to_string(&self.peso),
-            u8_to_string(&self._data_nasci_mae)
-        )
-    }
-}
 
 // Converte uma array de u8 para String
 fn u8_to_string(s: &[u8]) -> String {
@@ -172,12 +139,7 @@ fn questao_6(arquivo_original: &mut File) {
     Não é para fazer ordenação externa.
 */
 fn questao_7(arquivo_original: &mut File) {
-    let quant_registros:usize = match arquivo_original.metadata() {
-        Ok(metadata) => (metadata.len() / 42 ) as usize,
-        Err(e) => panic!("Erro ao ler o tamanho do arquivo: {}", e),
-    };
-
-    let mut arr: Vec<RegNascimento> = Vec::new();    
+    let mut arr: Vec<RegNascimento> = Vec::new();
     let mut buffer = BufReader::new(arquivo_original);
     buffer.seek(SeekFrom::Start(0)).unwrap();
 
@@ -207,7 +169,7 @@ fn questao_7(arquivo_original: &mut File) {
 
     // Gravando dado no arquivo
     for reg in arr.iter() {
-        let registro:[u8; 42] = unsafe { mem::transmute(*reg) };
+        let registro: [u8; 42] = unsafe { mem::transmute(*reg) };
         arquivo_copia.write(&registro).unwrap();
     }
     println!("Arquivo ordenado e gravado em \"sinasc-sp-2018-ordenado.dat\"")
@@ -229,48 +191,38 @@ fn questao_8() {
         Err(e) => panic!("Erro ao abrir o arquivo: {}", e),
     };
 
+    let mut buffer = BufReader::new(&mut arquivo_ordenado);
     let mut contador = 0;
     let mut ultimo_estabelecimento = String::new();
-
-    let mut buffer = BufReader::new(&mut arquivo_ordenado);
-    buffer.seek(SeekFrom::Start(0)).unwrap();
     let mut registro = [0; 42];
-    loop {
+    for _ in 0..606146 {
         match buffer.read(&mut registro) {
             Ok(size) => {
                 if size == 0 {
                     break;
                 } // EOF
 
-                let ultimo_reg: RegNascimento = unsafe { mem::transmute(registro) };
-
-                let cod_estabelecimento = u8_to_string(&ultimo_reg.cod_estabelecimento);
+                let reg_atual: RegNascimento = unsafe { mem::transmute(registro) };
+                let cod_estabelecimento = u8_to_string(&reg_atual.cod_estabelecimento);
 
                 if ultimo_estabelecimento != cod_estabelecimento {
                     println!("{} - {}", ultimo_estabelecimento, contador);
+                    //Pause
+                    std::io::stdin().read_line(&mut String::new()).unwrap();
                     contador = 1;
                     ultimo_estabelecimento = cod_estabelecimento;
-                } else {
+                }else{
                     contador += 1;
                 }
-            }
-            Err(e) => panic!("Erro ao ler o registro: {}", e),
+            },
+            Err(e) => panic!("Erro ao ler o arquivo: {}", e),
         }
-    }
+    }    
 }
 // Exclui os arquivos sinasc-sp-capital-2018.dat, sinasc-sp-2018-ordenado.dat se existirem
-fn limpar_arquivo() -> std::io::Result<()> {
-    remove_file(Path::new("sinasc-sp-capital-2018.dat"))?;
-    remove_file(Path::new("sinasc-sp-2018-ordenado.dat"))?;
-    Ok(())
-}
+
 
 fn main() {
-    match limpar_arquivo() {
-        Ok(_) => println!("Arquivos limpos com sucesso!"),
-        Err(e) => println!("Arquivos não existentes ou erro {}", e),
-    }
-
     let mut arquivo_original = match File::open(Path::new("sinasc-sp-2018.dat")) {
         Ok(file) => file,
         Err(e) => panic!("Erro ao abrir o arquivo: {}", e),
